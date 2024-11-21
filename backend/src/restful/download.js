@@ -13,6 +13,9 @@ import { getISO } from '@/utils/geo';
 import env from '@/utils/env';
 
 export default function register($app) {
+    $app.get('/share/col/:name', downloadCollection);
+    $app.get('/share/sub/:name', downloadSubscription);
+
     $app.get('/download/collection/:name', downloadCollection);
     $app.get('/download/:name', downloadSubscription);
     $app.get(
@@ -72,6 +75,7 @@ async function downloadSubscription(req, res) {
         includeUnsupportedProxy,
         resultFormat,
         proxy,
+        noCache,
     } = req.query;
     let $options = {};
     if (req.query.$options) {
@@ -128,6 +132,10 @@ async function downloadSubscription(req, res) {
         $.info(`手动指定了 target 为 SurgeMac, 将使用 Mihomo External`);
     }
 
+    if (noCache) {
+        $.info(`指定不使用缓存: ${noCache}`);
+    }
+
     const allSubs = $.read(SUBS_KEY);
     const sub = findByName(allSubs, name);
     if (sub) {
@@ -148,8 +156,9 @@ async function downloadSubscription(req, res) {
                 },
                 $options,
                 proxy,
+                noCache,
             });
-
+            let flowInfo;
             if (
                 sub.source !== 'local' ||
                 ['localFirst', 'remoteFirst'].includes(sub.mergeSources)
@@ -184,7 +193,7 @@ async function downloadSubscription(req, res) {
                     }
                     if (!$arguments.noFlow) {
                         // forward flow headers
-                        const flowInfo = await getFlowHeaders(
+                        flowInfo = await getFlowHeaders(
                             $arguments?.insecure ? `${url}#insecure` : url,
                             $arguments.flowUserAgent,
                             undefined,
@@ -204,7 +213,10 @@ async function downloadSubscription(req, res) {
                 }
             }
             if (sub.subUserinfo) {
-                res.set('subscription-userinfo', sub.subUserinfo);
+                res.set(
+                    'subscription-userinfo',
+                    [sub.subUserinfo, flowInfo].filter((i) => i).join('; '),
+                );
             }
 
             if (platform === 'JSON') {
@@ -280,6 +292,7 @@ async function downloadCollection(req, res) {
         includeUnsupportedProxy,
         resultFormat,
         proxy,
+        noCache,
     } = req.query;
 
     let $options = {};
@@ -322,6 +335,9 @@ async function downloadCollection(req, res) {
     if (useMihomoExternal) {
         $.info(`手动指定了 target 为 SurgeMac, 将使用 Mihomo External`);
     }
+    if (noCache) {
+        $.info(`指定不使用缓存: ${noCache}`);
+    }
 
     if (collection) {
         try {
@@ -337,6 +353,7 @@ async function downloadCollection(req, res) {
                 },
                 $options,
                 proxy,
+                noCache,
             });
 
             // forward flow header from the first subscription in this collection
@@ -344,6 +361,7 @@ async function downloadCollection(req, res) {
             const subnames = collection.subscriptions;
             if (subnames.length > 0) {
                 const sub = findByName(allSubs, subnames[0]);
+                let flowInfo;
                 if (
                     sub.source !== 'local' ||
                     ['localFirst', 'remoteFirst'].includes(sub.mergeSources)
@@ -377,7 +395,7 @@ async function downloadCollection(req, res) {
                             }
                         }
                         if (!$arguments.noFlow) {
-                            const flowInfo = await getFlowHeaders(
+                            flowInfo = await getFlowHeaders(
                                 $arguments?.insecure ? `${url}#insecure` : url,
                                 $arguments.flowUserAgent,
                                 undefined,
@@ -397,7 +415,10 @@ async function downloadCollection(req, res) {
                     }
                 }
                 if (sub.subUserinfo) {
-                    res.set('subscription-userinfo', sub.subUserinfo);
+                    res.set(
+                        'subscription-userinfo',
+                        [sub.subUserinfo, flowInfo].filter((i) => i).join('; '),
+                    );
                 }
             }
 

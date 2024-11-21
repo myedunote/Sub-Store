@@ -1,14 +1,24 @@
 import { SETTINGS_KEY } from '@/constants';
 import { HTTP, ENV } from '@/vendor/open-api';
+import { hex_md5 } from '@/vendor/md5';
 import { getPolicyDescriptor } from '@/utils';
 import $ from '@/core/app';
 import headersResourceCache from '@/utils/headers-resource-cache';
 
 export function getFlowField(headers) {
-    const subkey = Object.keys(headers).filter((k) =>
-        /SUBSCRIPTION-USERINFO/i.test(k),
-    )[0];
-    return headers[subkey];
+    const keys = Object.keys(headers);
+    let sub = '';
+    let webPage = '';
+    for (let k of keys) {
+        const lower = k.toLowerCase();
+        if (lower === 'subscription-userinfo') {
+            sub = headers[k];
+        } else if (lower === 'profile-web-page-url') {
+            webPage = headers[k];
+        }
+    }
+
+    return `${sub || ''}${webPage ? `;app_url=${webPage}` : ''}`;
 }
 export async function getFlowHeaders(
     rawUrl,
@@ -41,29 +51,26 @@ export async function getFlowHeaders(
         return;
     }
     const { isStash, isLoon, isShadowRocket, isQX } = ENV();
-    const cached = headersResourceCache.get(url);
+    const insecure = $arguments?.insecure
+        ? $.env.isNode
+            ? { strictSSL: false }
+            : { insecure: true }
+        : undefined;
+    const { defaultProxy, defaultFlowUserAgent, defaultTimeout } =
+        $.read(SETTINGS_KEY);
+    let proxy = customProxy || defaultProxy;
+    if ($.env.isNode) {
+        proxy = proxy || eval('process.env.SUB_STORE_BACKEND_DEFAULT_PROXY');
+    }
+    const userAgent = ua || defaultFlowUserAgent || 'clash';
+    const requestTimeout = timeout || defaultTimeout;
+    const id = hex_md5(userAgent + url);
+    const cached = headersResourceCache.get(id);
     let flowInfo;
     if (!$arguments?.noCache && cached) {
-        // $.info(`使用缓存的流量信息: ${url}`);
+        $.info(`使用缓存的流量信息: ${url}, ${userAgent}`);
         flowInfo = cached;
     } else {
-        const insecure = $arguments?.insecure
-            ? $.env.isNode
-                ? { strictSSL: false }
-                : { insecure: true }
-            : undefined;
-        const { defaultProxy, defaultFlowUserAgent, defaultTimeout } =
-            $.read(SETTINGS_KEY);
-        let proxy = customProxy || defaultProxy;
-        if ($.env.isNode) {
-            proxy =
-                proxy || eval('process.env.SUB_STORE_BACKEND_DEFAULT_PROXY');
-        }
-        const userAgent =
-            ua ||
-            defaultFlowUserAgent ||
-            'Quantumult%20X/1.0.30 (iPhone14,2; iOS 15.6)';
-        const requestTimeout = timeout || defaultTimeout;
         const http = HTTP();
         if (flowUrl) {
             $.info(
@@ -159,7 +166,7 @@ export async function getFlowHeaders(
             }
         }
         if (flowInfo) {
-            headersResourceCache.set(url, flowInfo);
+            headersResourceCache.set(id, flowInfo);
         }
     }
 
@@ -190,8 +197,29 @@ export function parseFlowHeaders(flowHeaders) {
         ? Number(expireMatch[1] + expireMatch[2])
         : undefined;
 
-    return { expires, total, usage: { upload, download } };
+    const remainingDaysMatch = flowHeaders.match(/reset_day=([0-9]+)/);
+    const remainingDays = remainingDaysMatch
+        ? Number(remainingDaysMatch[1])
+        : undefined;
+
+    const appUrlMatch = flowHeaders.match(/app_url=(.*?)\s*?(;|$)/);
+    const appUrl = appUrlMatch ? decodeURIComponent(appUrlMatch[1]) : undefined;
+
+    const planNameMatch = flowHeaders.match(/plan_name=(.*?)\s*?(;|$)/);
+    const planName = planNameMatch
+        ? decodeURIComponent(planNameMatch[1])
+        : undefined;
+
+    return {
+        expires,
+        total,
+        usage: { upload, download },
+        remainingDays,
+        appUrl,
+        planName,
+    };
 }
+
 export function flowTransfer(flow, unit = 'B') {
     const unitList = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
     let unitIndex = unitList.indexOf(unit);

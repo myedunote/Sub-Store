@@ -2,18 +2,24 @@ export function getUserAgentFromHeaders(headers) {
     const keys = Object.keys(headers);
     let UA = '';
     let ua = '';
+    let accept = '';
     for (let k of keys) {
-        if (/USER-AGENT/i.test(k)) {
+        const lower = k.toLowerCase();
+        if (lower === 'user-agent') {
             UA = headers[k];
             ua = UA.toLowerCase();
-            break;
+        } else if (lower === 'accept') {
+            accept = headers[k];
         }
     }
-    return { UA, ua };
+    return { UA, ua, accept };
 }
-export function getPlatformFromUserAgent({ ua, UA }) {
+
+export function getPlatformFromUserAgent({ ua, UA, accept }) {
     if (UA.indexOf('Quantumult%20X') !== -1) {
         return 'QX';
+    } else if (ua.indexOf('egern') !== -1) {
+        return 'Egern';
     } else if (UA.indexOf('Surfboard') !== -1) {
         return 'Surfboard';
     } else if (UA.indexOf('Surge Mac') !== -1) {
@@ -39,11 +45,14 @@ export function getPlatformFromUserAgent({ ua, UA }) {
         return 'V2Ray';
     } else if (ua.indexOf('sing-box') !== -1) {
         return 'sing-box';
-    } else {
+    } else if (accept.indexOf('application/json') === 0) {
         return 'JSON';
+    } else {
+        return 'V2Ray';
     }
 }
+
 export function getPlatformFromHeaders(headers) {
-    const { UA, ua } = getUserAgentFromHeaders(headers);
-    return getPlatformFromUserAgent({ ua, UA });
+    const { UA, ua, accept } = getUserAgentFromHeaders(headers);
+    return getPlatformFromUserAgent({ ua, UA, accept });
 }
